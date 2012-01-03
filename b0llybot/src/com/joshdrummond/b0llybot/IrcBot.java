@@ -1,5 +1,7 @@
 package com.joshdrummond.b0llybot;
 
+import java.io.FileInputStream;
+import java.util.Properties;
 import jerklib.ConnectionManager;
 import jerklib.Profile;
 import jerklib.events.IRCEvent;
@@ -7,24 +9,37 @@ import jerklib.events.JoinCompleteEvent;
 import jerklib.events.MessageEvent;
 import jerklib.listeners.IRCEventListener;
 
+
 public class IrcBot implements IRCEventListener {
 
-    public IrcBot(String name, String nick, String hostname, int port)
+	private Properties props = null;
+	
+    public IrcBot(Properties props)
     {
-        ConnectionManager manager = new ConnectionManager(new Profile(name, nick));
-        manager.requestConnection(hostname,  port).addIRCEventListener(this);
+    	this.props = props;
+        ConnectionManager manager = new ConnectionManager(new Profile(props.getProperty("name"), props.getProperty("nick")));
+        manager.requestConnection(props.getProperty("hostname"),  Integer.valueOf(props.getProperty("port"))).addIRCEventListener(this);
     }
 
     public static void main(String args[])
     {
-        new IrcBot("owly bot", "owly", "irc.colosolutions.net", 6667);
+    	try
+    	{
+        	Properties props = new Properties();
+    		props.load(new FileInputStream("b0llybot.properties"));
+            new IrcBot(props);
+    	}
+    	catch (Exception e)
+    	{
+    		e.printStackTrace();
+    	}
     }
     
     @Override
     public void receiveEvent(IRCEvent e) {
         if (e.getType() == IRCEvent.Type.CONNECT_COMPLETE)
         {
-            e.getSession().join("#smashing_pumpkins");
+            e.getSession().join(props.getProperty("channel"));
         }
         else if (e.getType() == IRCEvent.Type.JOIN_COMPLETE)
         {
@@ -33,6 +48,7 @@ public class IrcBot implements IRCEventListener {
         else if (e.getType() == IRCEvent.Type.CHANNEL_MESSAGE)
         {
             MessageEvent event = (MessageEvent)e;
+            System.out.println(e.getRawEventData());
             if (e.getRawEventData().contains("owly"))
             {
                 event.getChannel().say("wut? shutup");
