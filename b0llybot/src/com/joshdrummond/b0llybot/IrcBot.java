@@ -25,6 +25,7 @@ public class IrcBot
 {
     private Properties props = null;
     Map<String, Reply> replies = null;
+    List<String> quotes = null;
     
     public IrcBot(Properties props)
     {
@@ -33,6 +34,7 @@ public class IrcBot
         ConnectionManager manager = new ConnectionManager(new Profile(props.getProperty("name"), props.getProperty("nick")));
         Session session = manager.requestConnection(props.getProperty("hostname"), Integer.valueOf(props.getProperty("port")));
         loadReplies();
+        loadQuotes();
         addEventHandlers(session);
     }
 
@@ -60,6 +62,7 @@ public class IrcBot
                 if (message.contains(".reload"))
                 {
                     loadReplies();
+                    loadQuotes();
                 }
 //                else if (message.contains("owly is dead to me"))
 //                {
@@ -70,6 +73,11 @@ public class IrcBot
                 else if (message.contains(".weather"))
                 {
                     event.getChannel().say(getCurrentWeather(message));
+                }
+                else if (message.contains(".quote"))
+                {
+                	int num = (new Random()).nextInt(quotes.size()) + 1;
+                    event.getChannel().say("Quote #"+num+": "+quotes.get(num-1));
                 }
                 else
                 {
@@ -113,6 +121,29 @@ public class IrcBot
                 replies.put(trigger, new Reply(chance, (String[])answers.toArray(new String[answers.size()])));
                 line = reader.readLine();
             }
+            reader.close();
+        }
+        catch (IOException e)
+        {
+            e.printStackTrace();
+        }
+    }
+    
+    private void loadQuotes()
+    {
+        System.out.println("loading quotes");
+        quotes = new ArrayList<String>();
+        try
+        {
+            BufferedReader reader = new BufferedReader(new FileReader("quotes.dat"));
+            String line = reader.readLine();
+            while (line != null)
+            {
+            	line = line.trim();
+            	if (line != "") quotes.add(line);
+                line = reader.readLine();
+            }
+            reader.close();
         }
         catch (IOException e)
         {
