@@ -48,14 +48,15 @@ public class IrcBot implements IRCEventListener {
         else if (e.getType() == IRCEvent.Type.CHANNEL_MESSAGE)
         {
             MessageEvent event = (MessageEvent)e;
-            System.out.println(e.getRawEventData());
-            if (e.getRawEventData().contains("owly"))
+            String message = e.getRawEventData().toLowerCase();
+            System.out.println(message);
+            if (message.contains("owly"))
             {
                 event.getChannel().say("wut? shutup");
             }
-            else if (e.getRawEventData().startsWith(".weather"))
+            else if (message.contains(".weather"))
             {
-                event.getChannel().say(getCurrentWeather(e.getRawEventData()));
+                event.getChannel().say(getCurrentWeather(message));
             }
         }
     }
