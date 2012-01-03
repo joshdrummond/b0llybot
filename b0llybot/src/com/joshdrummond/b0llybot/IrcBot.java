@@ -3,7 +3,6 @@ package com.joshdrummond.b0llybot;
 import java.io.BufferedReader;
 import java.io.FileInputStream;
 import java.io.FileReader;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -11,6 +10,14 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Random;
 import java.util.StringTokenizer;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.impl.client.DefaultHttpClient;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
 import jerklib.ConnectionManager;
 import jerklib.Profile;
 import jerklib.Session;
@@ -40,6 +47,7 @@ public class IrcBot
 
     private void addEventHandlers(Session session)
     {
+    	System.out.println("adding event handlers");
         session.onEvent(new TaskImpl("join_channel") {
             @Override
             public void receiveEvent(IRCEvent e) {
@@ -72,7 +80,8 @@ public class IrcBot
 //                }
                 else if (message.contains(".weather"))
                 {
-                    event.getChannel().say(getCurrentWeather(message));
+                	String[] s = message.split("weather");
+                    event.getChannel().say(getCurrentWeather(s[1].trim()));
                 }
                 else if (message.contains(".quote"))
                 {
@@ -123,7 +132,7 @@ public class IrcBot
             }
             reader.close();
         }
-        catch (IOException e)
+        catch (Exception e)
         {
             e.printStackTrace();
         }
@@ -145,7 +154,7 @@ public class IrcBot
             }
             reader.close();
         }
-        catch (IOException e)
+        catch (Exception e)
         {
             e.printStackTrace();
         }
@@ -165,9 +174,30 @@ public class IrcBot
         }
     }
     
-    private String getCurrentWeather(String msg)
+    private String getCurrentWeather(String location)
     {
-        return "";
+    	String weather = "";
+    	System.out.println("getting weather for "+location);
+    	try
+    	{
+	    	HttpClient hc = new DefaultHttpClient();
+	    	HttpGet httpget = new HttpGet("http://www.google.com/ig/api?hl=en&weather="+location.replaceAll(" ", "%20"));
+	    	HttpResponse response = hc.execute(httpget);
+	    	DocumentBuilder db = DocumentBuilderFactory.newInstance().newDocumentBuilder();
+	    	Document dom = db.parse(response.getEntity().getContent());
+	    	String city = (((Element)dom.getElementsByTagName("forecast_information").item(0)).getElementsByTagName("city")).item(0).getAttributes().getNamedItem("data").getNodeValue();
+	    	String tempF = (((Element)dom.getElementsByTagName("current_conditions").item(0)).getElementsByTagName("temp_f")).item(0).getAttributes().getNamedItem("data").getNodeValue();
+	    	String tempC = (((Element)dom.getElementsByTagName("current_conditions").item(0)).getElementsByTagName("temp_c")).item(0).getAttributes().getNamedItem("data").getNodeValue();
+	    	String condition = (((Element)dom.getElementsByTagName("current_conditions").item(0)).getElementsByTagName("condition")).item(0).getAttributes().getNamedItem("data").getNodeValue();
+	    	String humidity = (((Element)dom.getElementsByTagName("current_conditions").item(0)).getElementsByTagName("humidity")).item(0).getAttributes().getNamedItem("data").getNodeValue();
+	    	String wind = (((Element)dom.getElementsByTagName("current_conditions").item(0)).getElementsByTagName("wind_condition")).item(0).getAttributes().getNamedItem("data").getNodeValue();
+	    	weather = "Current conditions for "+city+" are "+condition+ " "+tempF+"F / "+tempC+"C "+humidity+" "+wind;
+    	}
+    	catch (Exception e)
+    	{
+    		e.printStackTrace();
+    	}
+        return weather;
     }
 }
 
