@@ -1,0 +1,1 @@
+java -cp .;classes\;lib\commons-codec-1.4.jar;lib\commons-logging-1.1.1.jar;lib\httpclient-4.1.2.jar;lib\httpclient-cache-4.1.2.jar;lib\httpcore-4.1.2.jar;lib\httpmime-4.1.2.jar;lib\pircbot.jar com.joshdrummond.b0llybot.RunIrcBot

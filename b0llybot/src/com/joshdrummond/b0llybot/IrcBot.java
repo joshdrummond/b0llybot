@@ -1,7 +1,6 @@
 package com.joshdrummond.b0llybot;
 
 import java.io.BufferedReader;
-import java.io.FileInputStream;
 import java.io.FileReader;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -16,19 +15,13 @@ import org.apache.http.HttpResponse;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.DefaultHttpClient;
+import org.jibble.pircbot.PircBot;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
-import jerklib.ConnectionManager;
-import jerklib.Profile;
-import jerklib.Session;
-import jerklib.events.IRCEvent;
-import jerklib.events.IRCEvent.Type;
-import jerklib.events.JoinCompleteEvent;
-import jerklib.events.MessageEvent;
-import jerklib.tasks.TaskImpl;
 
 
 public class IrcBot
+    extends PircBot
 {
     private Properties props = null;
     Map<String, Reply> replies = null;
@@ -37,77 +30,81 @@ public class IrcBot
     public IrcBot(Properties props)
     {
         this.props = props;
-        System.out.println("connecting to "+props.getProperty("hostname"));
-        ConnectionManager manager = new ConnectionManager(new Profile(props.getProperty("name"), props.getProperty("nick")));
-        Session session = manager.requestConnection(props.getProperty("hostname"), Integer.valueOf(props.getProperty("port")));
+        this.setName(props.getProperty("nick"));
         loadReplies();
         loadQuotes();
-        addEventHandlers(session);
     }
 
-    private void addEventHandlers(Session session)
+    @Override
+    protected void onMessage(String channel, String sender, String login, String hostname, String message)
     {
-    	System.out.println("adding event handlers");
-        session.onEvent(new TaskImpl("join_channel") {
-            @Override
-            public void receiveEvent(IRCEvent e) {
-                System.out.println("joining "+props.getProperty("channel"));
-                e.getSession().join(props.getProperty("channel"));
-            }
-        }, Type.CONNECT_COMPLETE);
-        session.onEvent(new TaskImpl("introduce") {
-            @Override
-            public void receiveEvent(IRCEvent e) {
-                ((JoinCompleteEvent)e).getChannel().say(props.getProperty("introduction"));
-            }
-        }, Type.JOIN_COMPLETE);
-        session.onEvent(new TaskImpl("handle_message") {
-            @Override
-            public void receiveEvent(IRCEvent e) {
-                MessageEvent event = (MessageEvent)e;
-                String message = e.getRawEventData().toLowerCase();
-                System.out.println(message);
-                if (message.contains(".reload"))
+        message = message.toLowerCase();
+        System.out.println("channel message: "+message);
+        if (message.contains(".reload"))
+        {
+            loadReplies();
+            loadQuotes();
+        }
+        else if (message.contains(".weather"))
+        {
+            String[] s = message.split("weather");
+            sendMessage(channel, getCurrentWeather(s[1].trim()));
+        }
+        else if (message.contains(".quote"))
+        {
+            int num = (new Random()).nextInt(quotes.size()) + 1;
+            sendMessage(channel, "Quote #"+num+": "+quotes.get(num-1));
+        }
+        else
+        {
+            for (String key : replies.keySet())
+            {
+                if (key.equals("*") || message.contains(key))
                 {
-                    loadReplies();
-                    loadQuotes();
-                }
-//                else if (message.contains("owly is dead to me"))
-//                {
-//                    event.getChannel().say(props.getProperty("introduction"));
-//                    e.getSession().close("bye");
-//                    System.exit(0);
-//                }
-                else if (message.contains(".weather"))
-                {
-                	String[] s = message.split("weather");
-                    event.getChannel().say(getCurrentWeather(s[1].trim()));
-                }
-                else if (message.contains(".quote"))
-                {
-                	int num = (new Random()).nextInt(quotes.size()) + 1;
-                    event.getChannel().say("Quote #"+num+": "+quotes.get(num-1));
-                }
-                else
-                {
-                    for (String key : replies.keySet())
+                    Reply reply = replies.get(key);
+                    if ((new Random()).nextInt(100) < reply.getChance())
                     {
-                        if (key.equals("*") || message.contains(key))
-                        {
-                            Reply reply = replies.get(key);
-                            if ((new Random()).nextInt(100) < reply.getChance())
-                            {
-                                String[] answers = reply.getAnswers();
-                                int i = (new Random().nextInt(answers.length));
-                                event.getChannel().say(answers[i]);
-                            }
-                        }
+                        String[] answers = reply.getAnswers();
+                        int i = (new Random().nextInt(answers.length));
+                        sendMessage(channel, answers[i]);
+                        break;
                     }
                 }
             }
-        }, Type.CHANNEL_MESSAGE);
+        }
+    }
+    
+    @Override
+    protected void onJoin(String channel, String sender, String login, String hostname)
+    {
+        if (sender.equals(getNick()))
+        {
+            sendMessage(channel, props.getProperty("introduction"));
+        }
+//        else
+//        {
+//            sendMessage(channel, props.getProperty("other_introduction")+" "+sender);
+//        }
+    }
+    
+    @Override
+    protected void onPart(String channel, String sender, String login, String hostname)
+    {
+        sendMessage(channel, props.getProperty("goodbye")+" "+sender);
     }
 
+    @Override
+    protected void onPrivateMessage(String sender, String login, String hostname, String message)
+    {
+        message = message.toLowerCase();
+        System.out.println("private message: "+message);
+        if (message.contains(".reload"))
+        {
+            loadReplies();
+            loadQuotes();
+        }
+    }
+    
     private void loadReplies()
     {
         System.out.println("loading replies");
@@ -118,7 +115,6 @@ public class IrcBot
             String line = reader.readLine();
             while (line != null)
             {
-//                System.out.println(line);
                 StringTokenizer st = new StringTokenizer(line,"|");
                 String trigger = st.nextToken();
                 int chance = Integer.parseInt(st.nextToken());
@@ -148,8 +144,8 @@ public class IrcBot
             String line = reader.readLine();
             while (line != null)
             {
-            	line = line.trim();
-            	if (line != "") quotes.add(line);
+                line = line.trim();
+                if (line != "") quotes.add(line);
                 line = reader.readLine();
             }
             reader.close();
@@ -160,43 +156,29 @@ public class IrcBot
         }
     }
     
-    public static void main(String args[])
+    private String getCurrentWeather(String location)
     {
+        String weather = "";
+        System.out.println("getting weather for "+location);
         try
         {
-            Properties props = new Properties();
-            props.load(new FileInputStream("b0llybot.properties"));
-            new IrcBot(props);
+            HttpClient hc = new DefaultHttpClient();
+            HttpGet httpget = new HttpGet("http://www.google.com/ig/api?hl=en&weather="+location.replaceAll(" ", "%20"));
+            HttpResponse response = hc.execute(httpget);
+            DocumentBuilder db = DocumentBuilderFactory.newInstance().newDocumentBuilder();
+            Document dom = db.parse(response.getEntity().getContent());
+            String city = (((Element)dom.getElementsByTagName("forecast_information").item(0)).getElementsByTagName("city")).item(0).getAttributes().getNamedItem("data").getNodeValue();
+            String tempF = (((Element)dom.getElementsByTagName("current_conditions").item(0)).getElementsByTagName("temp_f")).item(0).getAttributes().getNamedItem("data").getNodeValue();
+            String tempC = (((Element)dom.getElementsByTagName("current_conditions").item(0)).getElementsByTagName("temp_c")).item(0).getAttributes().getNamedItem("data").getNodeValue();
+            String condition = (((Element)dom.getElementsByTagName("current_conditions").item(0)).getElementsByTagName("condition")).item(0).getAttributes().getNamedItem("data").getNodeValue();
+            String humidity = (((Element)dom.getElementsByTagName("current_conditions").item(0)).getElementsByTagName("humidity")).item(0).getAttributes().getNamedItem("data").getNodeValue();
+            String wind = (((Element)dom.getElementsByTagName("current_conditions").item(0)).getElementsByTagName("wind_condition")).item(0).getAttributes().getNamedItem("data").getNodeValue();
+            weather = "Current conditions for "+city+" are: "+tempF+"F / "+tempC+"C / "+condition+ " / "+humidity+" / "+wind;
         }
         catch (Exception e)
         {
             e.printStackTrace();
         }
-    }
-    
-    private String getCurrentWeather(String location)
-    {
-    	String weather = "";
-    	System.out.println("getting weather for "+location);
-    	try
-    	{
-	    	HttpClient hc = new DefaultHttpClient();
-	    	HttpGet httpget = new HttpGet("http://www.google.com/ig/api?hl=en&weather="+location.replaceAll(" ", "%20"));
-	    	HttpResponse response = hc.execute(httpget);
-	    	DocumentBuilder db = DocumentBuilderFactory.newInstance().newDocumentBuilder();
-	    	Document dom = db.parse(response.getEntity().getContent());
-	    	String city = (((Element)dom.getElementsByTagName("forecast_information").item(0)).getElementsByTagName("city")).item(0).getAttributes().getNamedItem("data").getNodeValue();
-	    	String tempF = (((Element)dom.getElementsByTagName("current_conditions").item(0)).getElementsByTagName("temp_f")).item(0).getAttributes().getNamedItem("data").getNodeValue();
-	    	String tempC = (((Element)dom.getElementsByTagName("current_conditions").item(0)).getElementsByTagName("temp_c")).item(0).getAttributes().getNamedItem("data").getNodeValue();
-	    	String condition = (((Element)dom.getElementsByTagName("current_conditions").item(0)).getElementsByTagName("condition")).item(0).getAttributes().getNamedItem("data").getNodeValue();
-	    	String humidity = (((Element)dom.getElementsByTagName("current_conditions").item(0)).getElementsByTagName("humidity")).item(0).getAttributes().getNamedItem("data").getNodeValue();
-	    	String wind = (((Element)dom.getElementsByTagName("current_conditions").item(0)).getElementsByTagName("wind_condition")).item(0).getAttributes().getNamedItem("data").getNodeValue();
-	    	weather = "Current conditions for "+city+" are "+condition+ " "+tempF+"F / "+tempC+"C "+humidity+" "+wind;
-    	}
-    	catch (Exception e)
-    	{
-    		e.printStackTrace();
-    	}
         return weather;
     }
 }
