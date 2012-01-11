@@ -13,7 +13,7 @@ public class RunIrcBot {
             Properties props = new Properties();
             props.load(new FileInputStream("b0llybot.properties"));
             IrcBot bot = new IrcBot(props);
-            bot.setVerbose(true);
+            bot.setVerbose(Boolean.valueOf(props.getProperty("verbose")));
             bot.connect(props.getProperty("hostname"), Integer.valueOf(props.getProperty("port")));
             bot.joinChannel(props.getProperty("channel"));
         }

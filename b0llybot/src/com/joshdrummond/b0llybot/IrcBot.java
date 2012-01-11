@@ -1,7 +1,9 @@
 package com.joshdrummond.b0llybot;
 
 import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.FileReader;
+import java.io.FileWriter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -26,24 +28,26 @@ public class IrcBot
     private Properties props = null;
     Map<String, Reply> replies = null;
     List<String> quotes = null;
+    private static final String FILE_QUOTES = "quotes.dat";
+    private static final String FILE_REPLIES = "replies.dat";
+    
     
     public IrcBot(Properties props)
     {
         this.props = props;
         this.setName(props.getProperty("nick"));
-        loadReplies();
-        loadQuotes();
+        this.setAutoNickChange(true);
+        this.setLogin(getName());
+        reload();
     }
 
     @Override
     protected void onMessage(String channel, String sender, String login, String hostname, String message)
     {
         message = message.toLowerCase();
-        System.out.println("channel message: "+message);
         if (message.contains(".reload"))
         {
-            loadReplies();
-            loadQuotes();
+            reload();
         }
         else if (message.contains(".weather"))
         {
@@ -52,8 +56,92 @@ public class IrcBot
         }
         else if (message.contains(".quote"))
         {
-            int num = (new Random()).nextInt(quotes.size()) + 1;
+            int num = 0;
+            try
+            {
+                 String[] s = message.split("quote");
+                String snum = s[1].trim();
+                if (!"".equals(snum))
+                {
+                    snum = snum.startsWith("#") ? snum.substring(1) : snum;
+                    num = Integer.parseInt(snum);
+                    if ((num < 1) || (num > quotes.size()))
+                    {
+                        num = 0;
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                e.printStackTrace();
+                num = 0;
+            }
+            
+            if (0 == num)
+            {
+                num = (new Random()).nextInt(quotes.size()) + 1;
+            }
             sendMessage(channel, "Quote #"+num+": "+quotes.get(num-1));
+        }
+        else if (message.contains(".addquote"))
+        {
+            int num = 0;
+            try
+            {
+                 String[] s = message.split("addquote");
+                String quote = s[1].trim();
+                if (!"".equals(quote))
+                {
+                    quote += " - added by "+sender;
+                    BufferedWriter writer = new BufferedWriter(new FileWriter(FILE_QUOTES, true));
+                    writer.write(quote+System.getProperty("line.separator"));
+                    writer.close();
+                    quotes.add(quote);
+                    num = quotes.size();
+                    sendMessage(channel, "Quote #"+num+" Added: "+quotes.get(num-1));
+                }
+            }
+            catch (Exception e)
+            {
+                e.printStackTrace();
+            }
+        }
+        else if (message.contains(".countquote"))
+        {
+            sendMessage(channel, "There are "+quotes.size()+" Quotes in the quote file.");
+        }
+        else if (message.contains(".findquote"))
+        {
+            try
+            {
+                 String[] s = message.split("findquote");
+                String quote = s[1].trim().toLowerCase();
+                if (!"".equals(quote))
+                {
+                    int num = 0;
+                    String found = "";
+                    for (String q : quotes)
+                    {
+                        num++;
+                        if (q.toLowerCase().contains(quote))
+                        {
+                            found += String.valueOf(num)+", ";
+                        }
+                    }
+                    if (!"".equals(found))
+                    {
+                        sendMessage(channel, "Quote(s) with the specified text are: "+found.substring(0, found.length()-2));
+                    }
+                    else
+                    {
+                        sendMessage(channel, "Quote(s) not found.");
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                e.printStackTrace();
+            }
         }
         else
         {
@@ -87,21 +175,25 @@ public class IrcBot
 //        }
     }
     
-    @Override
-    protected void onPart(String channel, String sender, String login, String hostname)
-    {
-        sendMessage(channel, props.getProperty("goodbye")+" "+sender);
-    }
+//    @Override
+//    protected void onPart(String channel, String sender, String login, String hostname)
+//    {
+//        sendMessage(channel, props.getProperty("goodbye")+" "+sender);
+//    }
+//
+//    @Override
+//    protected void onQuit(String channel, String sender, String login, String hostname)
+//    {
+//        sendMessage(channel, props.getProperty("goodbye")+" "+sender);
+//    }
 
     @Override
     protected void onPrivateMessage(String sender, String login, String hostname, String message)
     {
         message = message.toLowerCase();
-        System.out.println("private message: "+message);
         if (message.contains(".reload"))
         {
-            loadReplies();
-            loadQuotes();
+            reload();
         }
     }
     
@@ -111,7 +203,7 @@ public class IrcBot
         replies = new HashMap<String, Reply>();
         try
         {
-            BufferedReader reader = new BufferedReader(new FileReader("replies.dat"));
+            BufferedReader reader = new BufferedReader(new FileReader(FILE_REPLIES));
             String line = reader.readLine();
             while (line != null)
             {
@@ -140,7 +232,7 @@ public class IrcBot
         quotes = new ArrayList<String>();
         try
         {
-            BufferedReader reader = new BufferedReader(new FileReader("quotes.dat"));
+            BufferedReader reader = new BufferedReader(new FileReader(FILE_QUOTES));
             String line = reader.readLine();
             while (line != null)
             {
@@ -173,13 +265,19 @@ public class IrcBot
             String condition = (((Element)dom.getElementsByTagName("current_conditions").item(0)).getElementsByTagName("condition")).item(0).getAttributes().getNamedItem("data").getNodeValue();
             String humidity = (((Element)dom.getElementsByTagName("current_conditions").item(0)).getElementsByTagName("humidity")).item(0).getAttributes().getNamedItem("data").getNodeValue();
             String wind = (((Element)dom.getElementsByTagName("current_conditions").item(0)).getElementsByTagName("wind_condition")).item(0).getAttributes().getNamedItem("data").getNodeValue();
-            weather = "Current conditions for "+city+" are: "+tempF+"F / "+tempC+"C / "+condition+ " / "+humidity+" / "+wind;
+            weather = "Current conditions for "+city+" --- "+tempF+"F / "+tempC+"C / "+condition+ " / "+humidity+" / "+wind;
         }
         catch (Exception e)
         {
             e.printStackTrace();
         }
         return weather;
+    }
+    
+    private void reload()
+    {
+        loadReplies();
+        loadQuotes();
     }
 }
 
