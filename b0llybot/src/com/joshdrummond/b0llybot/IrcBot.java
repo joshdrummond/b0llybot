@@ -4,6 +4,7 @@ import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.FileReader;
 import java.io.FileWriter;
+import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -26,10 +27,12 @@ public class IrcBot
     extends PircBot
 {
     private Properties props = null;
-    Map<String, Reply> replies = null;
-    List<String> quotes = null;
+    private Map<String, Reply> replies = null;
+    private List<String> quotes = null;
+    private List<String> opips = null;
     private static final String FILE_QUOTES = "quotes.dat";
     private static final String FILE_REPLIES = "replies.dat";
+    private static final String FILE_OPIPS = "opips.dat";
     
     
     public IrcBot(Properties props)
@@ -44,6 +47,7 @@ public class IrcBot
     @Override
     protected void onMessage(String channel, String sender, String login, String hostname, String message)
     {
+    	String originalMessage = message;
         message = message.toLowerCase();
         if (message.contains(".reload"))
         {
@@ -52,22 +56,28 @@ public class IrcBot
         else if (message.contains(".weather"))
         {
             String[] s = message.split("weather");
-            sendMessage(channel, getCurrentWeather(s[1].trim()));
+            if (s.length > 1)
+            {
+                sendMessage(channel, getCurrentWeather(s[1].trim()));
+            }
         }
         else if (message.contains(".quote"))
         {
             int num = 0;
             try
             {
-                 String[] s = message.split("quote");
-                String snum = s[1].trim();
-                if (!"".equals(snum))
+                String[] s = message.split("quote");
+                if (s.length > 1)
                 {
-                    snum = snum.startsWith("#") ? snum.substring(1) : snum;
-                    num = Integer.parseInt(snum);
-                    if ((num < 1) || (num > quotes.size()))
+                    String snum = s[1].trim();
+                    if (!"".equals(snum))
                     {
-                        num = 0;
+                        snum = snum.startsWith("#") ? snum.substring(1) : snum;
+                        num = Integer.parseInt(snum);
+                        if ((num < 1) || (num > quotes.size()))
+                        {
+                            num = 0;
+                        }
                     }
                 }
             }
@@ -83,22 +93,25 @@ public class IrcBot
             }
             sendMessage(channel, "Quote #"+num+": "+quotes.get(num-1));
         }
-        else if (message.contains(".addquote"))
+        else if (originalMessage.contains(".addquote"))
         {
             int num = 0;
             try
             {
-                 String[] s = message.split("addquote");
-                String quote = s[1].trim();
-                if (!"".equals(quote))
+                String[] s = originalMessage.split("addquote");
+                if (s.length > 1)
                 {
-                    quote += " - added by "+sender;
-                    BufferedWriter writer = new BufferedWriter(new FileWriter(FILE_QUOTES, true));
-                    writer.write(quote+System.getProperty("line.separator"));
-                    writer.close();
-                    quotes.add(quote);
-                    num = quotes.size();
-                    sendMessage(channel, "Quote #"+num+" Added: "+quotes.get(num-1));
+                    String quote = s[1].trim();
+                    if (!"".equals(quote))
+                    {
+                        quote += " - added by "+sender;
+                        BufferedWriter writer = new BufferedWriter(new FileWriter(FILE_QUOTES, true));
+                        writer.write(quote+System.getProperty("line.separator"));
+                        writer.close();
+                        quotes.add(quote);
+                        num = quotes.size();
+                        sendMessage(channel, "Quote #"+num+" Added: "+quotes.get(num-1));
+                    }
                 }
             }
             catch (Exception e)
@@ -114,27 +127,30 @@ public class IrcBot
         {
             try
             {
-                 String[] s = message.split("findquote");
-                String quote = s[1].trim().toLowerCase();
-                if (!"".equals(quote))
+                String[] s = message.split("findquote");
+                if (s.length > 1)
                 {
-                    int num = 0;
-                    String found = "";
-                    for (String q : quotes)
+                    String quote = s[1].trim().toLowerCase();
+                    if (!"".equals(quote))
                     {
-                        num++;
-                        if (q.toLowerCase().contains(quote))
+                        int num = 0;
+                        String found = "";
+                        for (String q : quotes)
                         {
-                            found += String.valueOf(num)+", ";
+                            num++;
+                            if (q.toLowerCase().contains(quote))
+                            {
+                                found += String.valueOf(num)+", ";
+                            }
                         }
-                    }
-                    if (!"".equals(found))
-                    {
-                        sendMessage(channel, "Quote(s) with the specified text are: "+found.substring(0, found.length()-2));
-                    }
-                    else
-                    {
-                        sendMessage(channel, "Quote(s) not found.");
+                        if (!"".equals(found))
+                        {
+                            sendMessage(channel, "Quote(s) with the specified text are: "+found.substring(0, found.length()-2));
+                        }
+                        else
+                        {
+                            sendMessage(channel, "Quote(s) not found.");
+                        }
                     }
                 }
             }
@@ -169,6 +185,12 @@ public class IrcBot
         {
             sendMessage(channel, props.getProperty("introduction"));
         }
+        
+        if (isOpIP(hostname))
+        {
+        	op(channel, sender);
+        }
+        
 //        else
 //        {
 //            sendMessage(channel, props.getProperty("other_introduction")+" "+sender);
@@ -195,6 +217,26 @@ public class IrcBot
         {
             reload();
         }
+    }
+    
+    private boolean isOpIP(String hostname)
+    {
+    	try
+    	{
+	    	String ipAddress = InetAddress.getByName(hostname).getHostAddress();
+	    	for (String opip : opips)
+	    	{
+	    		if (ipAddress.equals(opip))
+	    		{
+	    			return true;
+	    		}
+	    	}
+    	}
+    	catch (Exception e)
+    	{
+    		e.printStackTrace();
+    	}
+    	return false;
     }
     
     private void loadReplies()
@@ -248,6 +290,28 @@ public class IrcBot
         }
     }
     
+    private void loadOpIps()
+    {
+        System.out.println("loading opips");
+        opips = new ArrayList<String>();
+        try
+        {
+            BufferedReader reader = new BufferedReader(new FileReader(FILE_OPIPS));
+            String line = reader.readLine();
+            while (line != null)
+            {
+                line = line.trim();
+                if (line != "") opips.add(line);
+                line = reader.readLine();
+            }
+            reader.close();
+        }
+        catch (Exception e)
+        {
+            e.printStackTrace();
+        }
+    }
+    
     private String getCurrentWeather(String location)
     {
         String weather = "";
@@ -278,6 +342,7 @@ public class IrcBot
     {
         loadReplies();
         loadQuotes();
+        loadOpIps();
     }
 }
 
