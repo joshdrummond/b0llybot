@@ -4,7 +4,9 @@ import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.FileReader;
 import java.io.FileWriter;
+import java.io.InputStreamReader;
 import java.net.InetAddress;
+import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -12,15 +14,13 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Random;
 import java.util.StringTokenizer;
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
+import net.sf.json.JSONObject;
+import net.sf.json.JSONSerializer;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.DefaultHttpClient;
 import org.jibble.pircbot.PircBot;
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
 
 
 public class IrcBot
@@ -53,9 +53,22 @@ public class IrcBot
         {
             reload();
         }
-        else if (message.contains(".weather"))
+        else if (message.contains(".wzf"))
+        {
+        	String[] s = message.split("wzf");
+        	if (s.length > 1)
+        	{
+        		sendMessage(channel, getWeatherForecast(s[1].trim()));
+        	}
+        }
+        else if (message.contains(".weather") || message.contains(".wz"))
         {
             String[] s = message.split("weather");
+            if (s.length < 2)
+            {
+            	s = message.split("wz");
+            }
+            
             if (s.length > 1)
             {
                 sendMessage(channel, getCurrentWeather(s[1].trim()));
@@ -312,30 +325,131 @@ public class IrcBot
         }
     }
     
-    private String getCurrentWeather(String location)
+    private String getWeatherForecast(String location)
     {
+    	int numDays = 5;
         String weather = "";
+        location = location.replaceAll(" ", "%20");
+        location = location.replaceAll(",", "%20");
         System.out.println("getting weather for "+location);
         try
         {
-            HttpClient hc = new DefaultHttpClient();
-            HttpGet httpget = new HttpGet("http://www.google.com/ig/api?hl=en&weather="+location.replaceAll(" ", "%20"));
-            HttpResponse response = hc.execute(httpget);
-            DocumentBuilder db = DocumentBuilderFactory.newInstance().newDocumentBuilder();
-            Document dom = db.parse(response.getEntity().getContent());
-            String city = (((Element)dom.getElementsByTagName("forecast_information").item(0)).getElementsByTagName("city")).item(0).getAttributes().getNamedItem("data").getNodeValue();
-            String tempF = (((Element)dom.getElementsByTagName("current_conditions").item(0)).getElementsByTagName("temp_f")).item(0).getAttributes().getNamedItem("data").getNodeValue();
-            String tempC = (((Element)dom.getElementsByTagName("current_conditions").item(0)).getElementsByTagName("temp_c")).item(0).getAttributes().getNamedItem("data").getNodeValue();
-            String condition = (((Element)dom.getElementsByTagName("current_conditions").item(0)).getElementsByTagName("condition")).item(0).getAttributes().getNamedItem("data").getNodeValue();
-            String humidity = (((Element)dom.getElementsByTagName("current_conditions").item(0)).getElementsByTagName("humidity")).item(0).getAttributes().getNamedItem("data").getNodeValue();
-            String wind = (((Element)dom.getElementsByTagName("current_conditions").item(0)).getElementsByTagName("wind_condition")).item(0).getAttributes().getNamedItem("data").getNodeValue();
-            weather = "Current conditions for "+city+" --- "+tempF+"F / "+tempC+"C / "+condition+ " / "+humidity+" / "+wind;
+            String weatherApiKey = props.getProperty("weather_api_key");
+            String jsonString = httpGet("http://i.wxbug.net/REST/Direct/GetLocation.ashx?zip="+location+"&api_key="+weatherApiKey);
+            JSONObject json = (JSONObject)JSONSerializer.toJSON(jsonString);
+            String city = ((JSONObject)json.get("location")).getString("city");
+            String state = ((JSONObject)json.get("location")).getString("state");
+            String cityCode = ((JSONObject)json.get("location")).getString("cityCode");
+            String country = ((JSONObject)json.get("location")).getString("country");
+            String zipcode = ((JSONObject)json.get("location")).getString("zipCode");
+            
+            if (!cityCode.equals("null"))
+            {
+            	jsonString = httpGet("http://i.wxbug.net/REST/Direct/GetForecast.ashx?city="+cityCode+"&nf="+numDays+"&ih=0&ht=t&ht=i&l=en&c=US&api_key="+weatherApiKey);
+            }
+            else
+            {
+            	jsonString = httpGet("http://i.wxbug.net/REST/Direct/GetForecast.ashx?zip="+zipcode+"&nf="+numDays+"&ih=0&ht=t&ht=i&l=en&c=US&api_key="+weatherApiKey);
+            }
+            json = (JSONObject)JSONSerializer.toJSON(jsonString);
+            weather = "Forecast conditions for "+city+", "+state+", "+country+" --- ";
+            for (int i = 0; i < numDays; i++)
+            {
+            	if (i > 0) weather += "; ";
+            	weather += ((JSONObject)(json.getJSONArray("forecastList")).get(i)).getString("title") + " - High: "+
+            		((JSONObject)(json.getJSONArray("forecastList")).get(i)).getString("high") + json.getString("temperatureUnits") + ", Low: " +
+            		((JSONObject)(json.getJSONArray("forecastList")).get(i)).getString("low") + json.getString("temperatureUnits");
+            }
+            //String temp = json.getString("temperature") + json.getString("temperatureUnits") + " ("+getCelcius(json.getString("temperature"))+"C)";
         }
         catch (Exception e)
         {
+        	System.out.println("Error: "+e.getMessage());
             e.printStackTrace();
         }
         return weather;
+    }
+    
+    private String getCurrentWeather(String location)
+    {
+        String weather = "";
+        location = location.replaceAll(" ", "%20");
+        location = location.replaceAll(",", "%20");
+        System.out.println("getting weather for "+location);
+        try
+        {
+            String weatherApiKey = props.getProperty("weather_api_key");
+            String jsonString = httpGet("http://i.wxbug.net/REST/Direct/GetLocation.ashx?zip="+location+"&api_key="+weatherApiKey);
+            JSONObject json = (JSONObject)JSONSerializer.toJSON(jsonString);
+            String city = ((JSONObject)json.get("location")).getString("city");
+            String state = ((JSONObject)json.get("location")).getString("state");
+            String cityCode = ((JSONObject)json.get("location")).getString("cityCode");
+            String country = ((JSONObject)json.get("location")).getString("country");
+            String zipcode = ((JSONObject)json.get("location")).getString("zipCode");
+            
+            if (!cityCode.equals("null"))
+            {
+            	jsonString = httpGet("http://i.wxbug.net/REST/Direct/GetObs.ashx?city="+cityCode+"&ic=1&api_key="+weatherApiKey);
+            }
+            else
+            {
+            	jsonString = httpGet("http://i.wxbug.net/REST/Direct/GetObs.ashx?zip="+zipcode+"&ic=1&api_key="+weatherApiKey);
+            }
+            json = (JSONObject)JSONSerializer.toJSON(jsonString);
+            String station = json.getString("stationName");
+            String temp = json.getString("temperature") + json.getString("temperatureUnits") + " ("+getCelcius(json.getString("temperature"))+"C)";
+//            String tempC = (((Element)dom.getElementsByTagName("current_conditions").item(0)).getElementsByTagName("temp_c")).item(0).getAttributes().getNamedItem("data").getNodeValue();
+            String condition = json.getString("desc");
+            String humidity = json.getString("humidity") + json.getString("humidityUnits");
+            String wind = json.getString("windDirection") + " at " + json.getString("windSpeed") + " "+json.getString("windUnits");
+//            String datetime = json.getString("dateTime");
+//            Date date = new Date(Long.valueOf(datetime));
+//            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd h:mm a z");
+
+            weather = "Current conditions for "+city+", "+state+", "+country+" ("+station+") --- "+temp+ " / "+condition+ " / Humidity: "+humidity+" / Wind: "+wind;
+        }
+        catch (Exception e)
+        {
+        	System.out.println("Error: "+e.getMessage());
+            e.printStackTrace();
+        }
+        return weather;
+    }
+    
+    private String getCelcius(String f)
+    {
+    	DecimalFormat df = new DecimalFormat("0.#");
+    	String c = "";
+    	try
+    	{
+    		double dFar = Double.valueOf(f);
+    		double dCel = (5.0/9.0)*(dFar-32.0);
+    		c = df.format(dCel);
+    	}
+    	catch (Exception e)
+    	{
+    		c = "unknown";
+    	}
+    	return c;
+    }
+    
+    private String httpGet(String URL)
+    	throws Exception
+    {
+        HttpClient hc = new DefaultHttpClient();
+        HttpGet httpget = new HttpGet(URL);
+//        System.out.println("httpGet: "+httpget.getURI());
+        HttpResponse response = hc.execute(httpget);
+        BufferedReader reader = new BufferedReader(new InputStreamReader(response.getEntity().getContent()));
+        StringBuilder builder = new StringBuilder();
+        String line = reader.readLine();
+        while (line != null)
+        {
+        	builder.append(line).append("\n");
+        	line = reader.readLine();
+        }
+//        System.out.println("httpResponse: "+builder.toString());
+        return builder.toString();
     }
     
     private void reload()
