@@ -2,11 +2,15 @@ package com.joshdrummond.b0llybot;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.FileWriter;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.InetAddress;
 import java.text.DecimalFormat;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -23,7 +27,6 @@ import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.DefaultHttpClient;
 import org.jibble.pircbot.PircBot;
-import org.jibble.pircbot.User;
 
 
 public class IrcBot
@@ -37,6 +40,28 @@ public class IrcBot
     private static final String FILE_REPLIES = "replies.dat";
     private static final String FILE_OPIPS = "opips.dat";
     private Map<String, String> hostnames = null;
+    private static final String[] MAGIC_8BALL_ANSWERS = {
+    		"It is certain",
+    		"It is decidedly so",
+    		"Without a doubt",
+    		"Yes definitely",
+    		"You may rely on it",
+    		"As I see it, yes",
+    		"Most likely",
+    		"Outlook good",
+    		"Yes",
+    		"Signs point to yes",
+    		"Reply hazy try again",
+    		"Ask again later",
+    		"Better not tell you now",
+    		"Cannot predict now",
+    		"Concentrate and ask again",
+    		"Don't count on it",
+    		"My reply is no",
+    		"My sources say no",
+    		"Outlook not so good",
+    		"Very doubtful"
+    };
     
     public IrcBot(Properties props)
     {
@@ -67,215 +92,304 @@ public class IrcBot
         }
         else if (message.contains(".earthquake"))
         {
-        	String[] s = message.trim().split(" ");
-        	int numEarthquakes = 1;
-        	String location = "";
-        	if (s.length > 1)
-        	{
-           		location = s[1].trim();
-           		if (isNumeric(location))
-           		{
-           			location = "";
-           			numEarthquakes = safeDefaultInt(s[1].trim(), 1);
-           		}
-           		else if (s.length > 2)
-        		{
-        			numEarthquakes = safeDefaultInt(s[2].trim(), 1);
-        		}
-        	}
-        	List<String> earthquakes = getAllEarthquakes(numEarthquakes, location);
-        	for (String earthquake : earthquakes)
-        	{
-        		sendMessage(channel, earthquake);
-        	}
+        	doEarthquake(channel, message);
         }
         else if (message.contains(".bigearthquake"))
         {
-        	String[] s = message.trim().split(" ");
-        	int numEarthquakes = 1;
-        	String location = "";
-        	if (s.length > 1)
-        	{
-           		location = s[1].trim();
-           		if (isNumeric(location))
-           		{
-           			location = "";
-           			numEarthquakes = safeDefaultInt(s[1].trim(), 1);
-           		}
-           		else if (s.length > 2)
-        		{
-        			numEarthquakes = safeDefaultInt(s[2].trim(), 1);
-        		}
-        	}
-        	List<String> earthquakes = getBigEarthquakes(numEarthquakes, location);
-        	for (String earthquake : earthquakes)
-        	{
-        		sendMessage(channel, earthquake);
-        	}
+        	doBigEarthquake(channel, message);
         }
         else if (message.contains(".news"))
         {
-        	String[] s = message.trim().split(" ");
-        	int numNews = 1;
-        	if (s.length > 1)
-        	{
-        		numNews = safeDefaultInt(s[1].trim(), 1);
-        	}
-        	List<String> news = getNews(numNews);
-        	for (String newsItem : news)
-        	{
-        		sendMessage(channel, newsItem);
-        	}
+        	doNews(channel, message);
+        }
+        else if (message.contains(".spnews"))
+        {
+        	doSPNews(channel, message);
+        }
+        else if (message.contains(".roulette"))
+        {
+        	doRoulette(channel, sender);
+        }
+        else if (message.contains(".8"))
+        {
+        	do8ball(channel);
         }
         else if (message.contains(".wzf "))
         {
-        	String[] s = message.split("wzf");
-        	if (s.length > 1)
-        	{
-        		sendMessage(channel, getWeatherForecast(s[1].trim()));
-        	}
+        	doWZF(channel, message);
         }
         else if (message.contains(".wzfd "))
         {
-        	String[] s = message.split("wzfd");
-        	if (s.length > 1)
-        	{
-            	List<String> weather = getWeatherForecastDetail(s[1].trim());
-            	for (String weatherItem : weather)
-            	{
-            		sendMessage(channel, weatherItem);
-            	}
-        	}
+        	doWZFD(channel, message);
         }
         else if (message.contains(".weather ") || message.contains(".wz "))
         {
-            String[] s = message.split("weather");
-            if (s.length < 2)
-            {
-            	s = message.split("wz");
-            }
-            
-            if (s.length > 1)
-            {
-                sendMessage(channel, getCurrentWeather(s[1].trim()));
-            }
+            doWZ(channel, message);
         }
         else if (message.contains(".quote"))
         {
-            int num = 0;
-            try
-            {
-                String[] s = message.split("quote");
-                if (s.length > 1)
-                {
-                    String snum = s[1].trim();
-                    if (!"".equals(snum))
-                    {
-                        snum = snum.startsWith("#") ? snum.substring(1) : snum;
-                        num = Integer.parseInt(snum);
-                        if ((num < 1) || (num > quotes.size()))
-                        {
-                            num = 0;
-                        }
-                    }
-                }
-            }
-            catch (Exception e)
-            {
-                e.printStackTrace();
-                num = 0;
-            }
-            
-            if (0 == num)
-            {
-                num = (new Random()).nextInt(quotes.size()) + 1;
-            }
-            sendMessage(channel, "Quote #"+num+": "+quotes.get(num-1));
+            doQuote(channel, message);
         }
         else if (originalMessage.contains(".addquote"))
         {
-            int num = 0;
-            try
-            {
-                String[] s = originalMessage.split("addquote");
-                if (s.length > 1)
-                {
-                    String quote = s[1].trim();
-                    if (!"".equals(quote))
-                    {
-                        quote += " - added by "+sender;
-                        BufferedWriter writer = new BufferedWriter(new FileWriter(FILE_QUOTES, true));
-                        writer.write(quote+System.getProperty("line.separator"));
-                        writer.close();
-                        quotes.add(quote);
-                        num = quotes.size();
-                        sendMessage(channel, "Quote #"+num+" Added: "+quotes.get(num-1));
-                    }
-                }
-            }
-            catch (Exception e)
-            {
-                e.printStackTrace();
-            }
+            doAddQuote(channel, sender, originalMessage);
         }
         else if (message.contains(".countquote"))
         {
-            sendMessage(channel, "There are "+quotes.size()+" Quotes in the quote file.");
+            doCountQuote(channel);
         }
         else if (message.contains(".findquote"))
         {
-            try
-            {
-                String[] s = message.split("findquote");
-                if (s.length > 1)
-                {
-                    String quote = s[1].trim().toLowerCase();
-                    if (!"".equals(quote))
-                    {
-                        int num = 0;
-                        String found = "";
-                        for (String q : quotes)
-                        {
-                            num++;
-                            if (q.toLowerCase().contains(quote))
-                            {
-                                found += String.valueOf(num)+", ";
-                            }
-                        }
-                        if (!"".equals(found))
-                        {
-                            sendMessage(channel, "Quote(s) with the specified text are: "+found.substring(0, found.length()-2));
-                        }
-                        else
-                        {
-                            sendMessage(channel, "Quote(s) not found.");
-                        }
-                    }
-                }
-            }
-            catch (Exception e)
-            {
-                e.printStackTrace();
-            }
+            doFindQuote(channel, message);
         }
         else
         {
-            for (String key : replies.keySet())
-            {
-                if (key.equals("*") || message.contains(key))
-                {
-                    Reply reply = replies.get(key);
-                    if ((new Random()).nextInt(100) < reply.getChance())
-                    {
-                        String[] answers = reply.getAnswers();
-                        int i = (new Random().nextInt(answers.length));
-                        sendMessage(channel, answers[i]);
-                        break;
-                    }
-                }
-            }
+            doRandomReply(channel, message);
         }
     }
+
+	private void doRandomReply(String channel, String message) {
+	    for (String key : replies.keySet())
+	    {
+	        if (key.equals("*") || message.contains(key))
+	        {
+	            Reply reply = replies.get(key);
+	            if ((new Random()).nextInt(100) < reply.getChance())
+	            {
+	                String[] answers = reply.getAnswers();
+	                int i = (new Random().nextInt(answers.length));
+	                sendMessage(channel, answers[i]);
+	                break;
+	            }
+	        }
+	    }
+    }
+
+	private void doFindQuote(String channel, String message) {
+	    try
+	    {
+	        String[] s = message.split("findquote");
+	        if (s.length > 1)
+	        {
+	            String quote = s[1].trim().toLowerCase();
+	            if (!"".equals(quote))
+	            {
+	                int num = 0;
+	                String found = "";
+	                for (String q : quotes)
+	                {
+	                    num++;
+	                    if (q.toLowerCase().contains(quote))
+	                    {
+	                        found += String.valueOf(num)+", ";
+	                    }
+	                }
+	                if (!"".equals(found))
+	                {
+	                    sendMessage(channel, "Quote(s) with the specified text are: "+found.substring(0, found.length()-2));
+	                }
+	                else
+	                {
+	                    sendMessage(channel, "Quote(s) not found.");
+	                }
+	            }
+	        }
+	    }
+	    catch (Exception e)
+	    {
+	        e.printStackTrace();
+	    }
+    }
+
+	private void doCountQuote(String channel) {
+	    sendMessage(channel, "There are "+quotes.size()+" Quotes in the quote file.");
+    }
+
+	private void doAddQuote(String channel, String sender,
+            String originalMessage) {
+	    int num = 0;
+	    try
+	    {
+	        String[] s = originalMessage.split("addquote");
+	        if (s.length > 1)
+	        {
+	            String quote = s[1].trim();
+	            if (!"".equals(quote))
+	            {
+	                quote += " - added by "+sender;
+	                BufferedWriter writer = new BufferedWriter(new FileWriter(FILE_QUOTES, true));
+	                writer.write(quote+System.getProperty("line.separator"));
+	                writer.close();
+	                quotes.add(quote);
+	                num = quotes.size();
+	                sendMessage(channel, "Quote #"+num+" Added: "+quotes.get(num-1));
+	            }
+	        }
+	    }
+	    catch (Exception e)
+	    {
+	        e.printStackTrace();
+	    }
+    }
+
+	private void doQuote(String channel, String message) {
+	    int num = 0;
+	    try
+	    {
+	        String[] s = message.split("quote");
+	        if (s.length > 1)
+	        {
+	            String snum = s[1].trim();
+	            if (!"".equals(snum))
+	            {
+	                snum = snum.startsWith("#") ? snum.substring(1) : snum;
+	                num = Integer.parseInt(snum);
+	                if ((num < 1) || (num > quotes.size()))
+	                {
+	                    num = 0;
+	                }
+	            }
+	        }
+	    }
+	    catch (Exception e)
+	    {
+	        e.printStackTrace();
+	        num = 0;
+	    }
+	    
+	    if (0 == num)
+	    {
+	        num = (new Random()).nextInt(quotes.size()) + 1;
+	    }
+	    sendMessage(channel, "Quote #"+num+": "+quotes.get(num-1));
+    }
+
+	private void doWZ(String channel, String message) {
+	    String[] s = message.split("weather");
+	    if (s.length < 2)
+	    {
+	    	s = message.split("wz");
+	    }
+	    
+	    if (s.length > 1)
+	    {
+	        sendMessage(channel, getCurrentWeather_wunderground(s[1].trim()));
+	    }
+    }
+
+	private void doWZFD(String channel, String message) {
+	    String[] s = message.split("wzfd");
+	    if (s.length > 1)
+	    {
+	    	List<String> weather = getWeatherForecastDetail_wunderground(s[1].trim());
+	    	for (String weatherItem : weather)
+	    	{
+	    		sendMessage(channel, weatherItem);
+	    	}
+	    }
+    }
+
+	private void doWZF(String channel, String message) {
+	    String[] s = message.split("wzf");
+	    if (s.length > 1)
+	    {
+	    	sendMessage(channel, getWeatherForecast_wunderground(s[1].trim()));
+	    }
+    }
+
+	private void doNews(String channel, String message) {
+	    String[] s = message.trim().split(" ");
+	    int numNews = 1;
+	    if (s.length > 1)
+	    {
+	    	numNews = safeDefaultInt(s[1].trim(), 1);
+	    }
+	    List<String> news = getNews(numNews);
+	    for (String newsItem : news)
+	    {
+	    	sendMessage(channel, newsItem);
+	    }
+    }
+	
+	private void doSPNews(String channel, String message) {
+	    String[] s = message.trim().split(" ");
+	    int numNews = 1;
+	    if (s.length > 1)
+	    {
+	    	numNews = safeDefaultInt(s[1].trim(), 1);
+	    }
+	    List<String> news = getSPNews(numNews);
+	    for (String newsItem : news)
+	    {
+	    	sendMessage(channel, newsItem);
+	    }
+    }
+
+	private void doBigEarthquake(String channel, String message) {
+	    String[] s = message.trim().split(" ");
+	    int numEarthquakes = 1;
+	    String location = "";
+	    if (s.length > 1)
+	    {
+	    	location = s[1].trim();
+	    	if (isNumeric(location))
+	    	{
+	    		location = "";
+	    		numEarthquakes = safeDefaultInt(s[1].trim(), 1);
+	    	}
+	    	else if (s.length > 2)
+	    	{
+	    		numEarthquakes = safeDefaultInt(s[2].trim(), 1);
+	    	}
+	    }
+	    List<String> earthquakes = getBigEarthquakes(numEarthquakes, location);
+	    for (String earthquake : earthquakes)
+	    {
+	    	sendMessage(channel, earthquake);
+	    }
+    }
+
+	private void doEarthquake(String channel, String message) {
+	    String[] s = message.trim().split(" ");
+	    int numEarthquakes = 1;
+	    String location = "";
+	    if (s.length > 1)
+	    {
+	    	location = s[1].trim();
+	    	if (isNumeric(location))
+	    	{
+	    		location = "";
+	    		numEarthquakes = safeDefaultInt(s[1].trim(), 1);
+	    	}
+	    	else if (s.length > 2)
+	    	{
+	    		numEarthquakes = safeDefaultInt(s[2].trim(), 1);
+	    	}
+	    }
+	    List<String> earthquakes = getAllEarthquakes(numEarthquakes, location);
+	    for (String earthquake : earthquakes)
+	    {
+	    	sendMessage(channel, earthquake);
+	    }
+    }
+	
+	private void doRoulette(String channel, String nick)
+	{
+		boolean isKick = (new Random()).nextInt(6) == 0;
+		if (isKick)
+		{
+			kick(channel, nick, "BANG!");
+		}
+		else
+		{
+			sendMessage(channel, "*click*");
+		}
+	}
+	
+	private void do8ball(String channel)
+	{
+		sendMessage(channel, MAGIC_8BALL_ANSWERS[(new Random()).nextInt(MAGIC_8BALL_ANSWERS.length)]);
+	}
     
     @Override
     protected void onJoin(String channel, String sender, String login, String hostname)
@@ -449,7 +563,8 @@ public class IrcBot
         }
     }
     
-    private String getWeatherForecast(String location)
+    @Deprecated
+    public String getWeatherForecast_weatherbug(String location)
     {
     	//API- http://developer.weatherbug.com/docs/read/WeatherBug_API_JSON
     	int numDays = 5;
@@ -504,8 +619,48 @@ public class IrcBot
         }
         return weather;
     }
-    
-    private List<String> getWeatherForecastDetail(String location)
+
+    public String getWeatherForecast_wunderground(String location)
+    {
+    	//API- http://www.wunderground.com/weather/api/d/docs?d=data/forecast
+    	int numDays = 4;
+        String weather = "";
+        location = location.replaceAll(" ", "%20");
+        System.out.println("getting weather forecast for "+location);
+        try
+        {
+            String weatherApiKey = props.getProperty("weather_api_key");
+            String url = "http://api.wunderground.com/api/"+weatherApiKey+"/forecast/q/"+location+".json";
+            System.out.println(url);
+            String jsonString = httpGet(url).trim();
+            JSONObject json = (JSONObject)JSONSerializer.toJSON(jsonString);
+            
+            weather = "Forecast conditions for "+getLocation_wunderground(location)+" --- ";
+            for (int i = 0; i < numDays; i++)
+            {
+            	if (i > 0) weather += "; ";
+                String day = ((JSONObject)((JSONObject)(((JSONObject)((JSONObject)json.getJSONObject("forecast")).getJSONObject("simpleforecast")).getJSONArray("forecastday")).get(i)).getJSONObject("date")).getString("weekday_short");
+                //String conditions = ((JSONObject)(((JSONObject)((JSONObject)json.getJSONObject("forecast")).getJSONObject("simpleforecast")).getJSONArray("forecastday")).get(i)).getString("conditions");
+            	weather += day + " - ";
+            	
+                String high = ((JSONObject)((JSONObject)(((JSONObject)((JSONObject)json.getJSONObject("forecast")).getJSONObject("simpleforecast")).getJSONArray("forecastday")).get(i)).getJSONObject("high")).getString("fahrenheit") + "F("+
+      	              ((JSONObject)((JSONObject)(((JSONObject)((JSONObject)json.getJSONObject("forecast")).getJSONObject("simpleforecast")).getJSONArray("forecastday")).get(i)).getJSONObject("high")).getString("celsius") + "C)";
+                String low = ((JSONObject)((JSONObject)(((JSONObject)((JSONObject)json.getJSONObject("forecast")).getJSONObject("simpleforecast")).getJSONArray("forecastday")).get(i)).getJSONObject("low")).getString("fahrenheit") + "F("+
+      	              ((JSONObject)((JSONObject)(((JSONObject)((JSONObject)json.getJSONObject("forecast")).getJSONObject("simpleforecast")).getJSONArray("forecastday")).get(i)).getJSONObject("low")).getString("celsius") + "C)";
+                weather += "High: "+high+", Low: "+low;
+            }
+        }
+        catch (Exception e)
+        {
+        	System.out.println("Error: "+e.getMessage());
+            e.printStackTrace(System.out);
+            weather = "error";
+        }
+        return weather;
+    }
+
+    @Deprecated
+    public List<String> getWeatherForecastDetail_weatherbug(String location)
     {
     	//API- http://developer.weatherbug.com/docs/read/WeatherBug_API_JSON
     	int numDays = 3;
@@ -565,8 +720,84 @@ public class IrcBot
         }
         return weather;
     }
+
+    public List<String> getWeatherForecastDetail_openweathermap(String location)
+    {
+    	//API- http://developer.weatherbug.com/docs/read/WeatherBug_API_JSON
+    	int numDays = 3;
+        List<String> weather = new ArrayList<String>();
+        location = location.replaceAll(" ", "%20");
+        //location = location.replaceAll(",", "%20");
+        System.out.println("getting weather forecast detail for "+location);
+        try
+        {
+            //String weatherApiKey = props.getProperty("weather_api_key");
+            //String jsonString = httpGet("http://i.wxbug.net/REST/Direct/GetLocation.ashx?zip="+location+"&api_key="+weatherApiKey);
+            String url = "http://api.openweathermap.org/data/2.5/forecast/daily?q="+location+"&mode=json&units=imperial&cnt="+numDays;
+            String jsonString = httpGet(url);
+            System.out.println(url);
+            JSONObject json = (JSONObject)JSONSerializer.toJSON(jsonString);
+            String city = ((JSONObject)json.getJSONObject("city")).getString("name");
+            String country = ((JSONObject)json.getJSONObject("city")).getString("country");
+            
+            weather.add("Detailed Forecast conditions for "+city+", "+country+" --- ");
+            for (int i = 0; i < numDays; i++)
+            {
+            	String maxTemp = getF(((JSONObject)((JSONObject)(json.getJSONArray("list")).get(i)).getJSONObject("temp")).getString("max"));
+            	maxTemp = maxTemp + "F ("+getCelcius(maxTemp)+"C)";
+            	String minTemp = getF(((JSONObject)((JSONObject)(json.getJSONArray("list")).get(i)).getJSONObject("temp")).getString("min"));
+            	minTemp = minTemp + "F ("+getCelcius(minTemp)+"C)";
+                String condition = ((JSONObject)((JSONArray)((JSONObject)(json.getJSONArray("list")).get(i)).getJSONArray("weather")).get(0)).getString("main") + ", " +
+                        ((JSONObject)((JSONArray)((JSONObject)(json.getJSONArray("list")).get(i)).getJSONArray("weather")).get(0)).getString("description");
+                String humidity = ((JSONObject)json.getJSONArray("list").get(i)).getString("humidity");
+                String wind = ((JSONObject)json.getJSONArray("list").get(i)).getString("speed");
+                String day = new SimpleDateFormat("yyyy-MM-dd").format(new Date(((JSONObject)json.getJSONArray("list").get(i)).getLong("dt")*1000));
+            	weather.add(day+" - High: "+maxTemp+ " / Low: "+minTemp+ " / "+condition+ " / Humidity: "+humidity+" / Wind: "+wind);
+            }
+        }
+        catch (Exception e)
+        {
+        	System.out.println("Error: "+e.getMessage());
+            e.printStackTrace();
+            weather.add("error");
+        }
+        return weather;
+    }
     
-    private String getCurrentWeather(String location)
+    public List<String> getWeatherForecastDetail_wunderground(String location)
+    {
+    	//API- http://www.wunderground.com/weather/api/d/docs?d=data/forecast
+    	int numDays = 8;
+        List<String> weather = new ArrayList<String>();
+        location = location.replaceAll(" ", "%20");
+        System.out.println("getting weather forecast detail for "+location);
+        try
+        {
+            String weatherApiKey = props.getProperty("weather_api_key");
+            String url = "http://api.wunderground.com/api/"+weatherApiKey+"/forecast/q/"+location+".json";
+            System.out.println(url);
+            String jsonString = httpGet(url).trim();
+            JSONObject json = (JSONObject)JSONSerializer.toJSON(jsonString);
+
+            weather.add("Detailed Forecast conditions for "+getLocation_wunderground(location)+" --- ");
+            for (int i = 0; i < numDays; i++)
+            {
+                String day = ((JSONObject)(((JSONObject)((JSONObject)json.getJSONObject("forecast")).getJSONObject("txt_forecast")).getJSONArray("forecastday")).get(i)).getString("title");
+                String conditions = ((JSONObject)(((JSONObject)((JSONObject)json.getJSONObject("forecast")).getJSONObject("txt_forecast")).getJSONArray("forecastday")).get(i)).getString("fcttext");
+            	weather.add(day+" - "+conditions);
+            }
+        }
+        catch (Exception e)
+        {
+        	System.out.println("Error: "+e.getMessage());
+            e.printStackTrace();
+            weather.add("error");
+        }
+        return weather;
+    }
+
+    @Deprecated
+    public String getCurrentWeather_weatherbug(String location)
     {
     	//API- http://developer.weatherbug.com/docs/read/WeatherBug_API_JSON
         String weather = "";
@@ -617,6 +848,98 @@ public class IrcBot
         return weather;
     }
     
+    
+    public String getCurrentWeather_openweathermap(String location)
+    {
+    	//API- http://openweathermap.org/current
+        String weather = "";
+        location = location.replaceAll(" ", "%20");
+        System.out.println("getting current weather for "+location);
+        try
+        {
+            String url = "http://api.openweathermap.org/data/2.5/find?q="+location+"&units=imperial";
+            String jsonString = httpGet(url);
+            System.out.println(url);
+            JSONObject json = (JSONObject)JSONSerializer.toJSON(jsonString);
+            String city = ((JSONObject)(json.getJSONArray("list")).get(0)).getString("name");
+            String country = ((JSONObject)((JSONObject)(json.getJSONArray("list")).get(0)).getJSONObject("sys")).getString("country");
+            String temp = getF(((JSONObject)((JSONObject)(json.getJSONArray("list")).get(0)).getJSONObject("main")).getString("temp"));
+            temp = temp + "F ("+getCelcius(temp)+"C)";
+            String condition = ((JSONObject)((JSONArray)((JSONObject)(json.getJSONArray("list")).get(0)).getJSONArray("weather")).get(0)).getString("main") + ", " +
+                               ((JSONObject)((JSONArray)((JSONObject)(json.getJSONArray("list")).get(0)).getJSONArray("weather")).get(0)).getString("description");
+            String humidity = ((JSONObject)((JSONObject)(json.getJSONArray("list")).get(0)).getJSONObject("main")).getString("humidity");
+            String wind = ((JSONObject)((JSONObject)(json.getJSONArray("list")).get(0)).getJSONObject("wind")).getString("speed");
+            weather = "Current conditions for "+city+", "+country+" --- "+temp+ " / "+condition+ " / Humidity: "+humidity+" / Wind: "+wind;
+        }
+        catch (Exception e)
+        {
+        	System.out.println("Error: "+e.getMessage());
+            e.printStackTrace();
+            weather = "error";
+        }
+        return weather;
+    }
+    
+    public String getCurrentWeather_wunderground(String location)
+    {
+    	//API- http://www.wunderground.com/weather/api/d/docs
+        String weather = "";
+        location = location.replaceAll(" ", "%20");
+        System.out.println("getting current weather for "+location);
+        try
+        {
+            String weatherApiKey = props.getProperty("weather_api_key");
+            String url = "http://api.wunderground.com/api/"+weatherApiKey+"/conditions/q/"+location+".json";
+            System.out.println(url);
+            String jsonString = httpGet(url).trim();
+            //System.out.println(jsonString);
+            JSONObject json = (JSONObject)JSONSerializer.toJSON(jsonString);
+            String city = ((JSONObject)((JSONObject)json.getJSONObject("current_observation")).getJSONObject("display_location")).getString("full");
+            String country = ((JSONObject)((JSONObject)json.getJSONObject("current_observation")).getJSONObject("display_location")).getString("country_iso3166");
+            String temp = ((JSONObject)json.getJSONObject("current_observation")).getString("temperature_string");
+            String condition = ((JSONObject)json.getJSONObject("current_observation")).getString("weather");
+            String humidity = ((JSONObject)json.getJSONObject("current_observation")).getString("relative_humidity");
+            String wind = ((JSONObject)json.getJSONObject("current_observation")).getString("wind_string");
+            String station = ((JSONObject)json.getJSONObject("current_observation")).getString("station_id");
+            weather = "Current conditions for "+city+", "+country+" ("+station+") --- "+temp+ " / "+condition+ " / Humidity: "+humidity+" / Wind: "+wind;
+        }
+        catch (Exception e)
+        {
+        	System.out.println("Error: "+e.getMessage());
+            e.printStackTrace();
+            weather = "error";
+        }
+        return weather;
+    }
+    
+    public String getLocation_wunderground(String location)
+    {
+    	//API- http://www.wunderground.com/weather/api/d/docs?d=data/geolookup
+        String weather = "";
+        location = location.replaceAll(" ", "%20");
+        System.out.println("getting location for "+location);
+        try
+        {
+            String weatherApiKey = props.getProperty("weather_api_key");
+            String url = "http://api.wunderground.com/api/"+weatherApiKey+"/geolookup/q/"+location+".json";
+            System.out.println(url);
+            String jsonString = httpGet(url).trim();
+            JSONObject json = (JSONObject)JSONSerializer.toJSON(jsonString);
+            String city = ((JSONObject)json.getJSONObject("location")).getString("city");
+            String state = ((JSONObject)json.getJSONObject("location")).getString("state");
+            String country = ((JSONObject)json.getJSONObject("location")).getString("country_name");
+            weather = city+", "+state+", "+country;
+        }
+        catch (Exception e)
+        {
+        	System.out.println("Error: "+e.getMessage());
+            e.printStackTrace();
+            weather = "error";
+        }
+        return weather;
+    }
+    
+
     private String getCelcius(String f)
     {
     	DecimalFormat df = new DecimalFormat("0.#");
@@ -626,6 +949,22 @@ public class IrcBot
     		double dFar = Double.valueOf(f);
     		double dCel = (5.0/9.0)*(dFar-32.0);
     		c = df.format(dCel);
+    	}
+    	catch (Exception e)
+    	{
+    		c = "unknown";
+    	}
+    	return c;
+    }
+    
+    private String getF(String f)
+    {
+    	DecimalFormat df = new DecimalFormat("0.#");
+    	String c = "";
+    	try
+    	{
+    		double dFar = Double.valueOf(f);
+    		c = df.format(dFar);
     	}
     	catch (Exception e)
     	{
@@ -669,21 +1008,52 @@ public class IrcBot
         return earthquakes;
     }
     
-    private List<String> getBigEarthquakes(int numEarthquakes, String location)
+    public List<String> getBigEarthquakes(int numEarthquakes, String location)
     {
     	return getEarthquakes(numEarthquakes, location, "http://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_month.geojson");
     }
 
-    private List<String> getAllEarthquakes(int numEarthquakes, String location)
+    public List<String> getAllEarthquakes(int numEarthquakes, String location)
     {
     	return getEarthquakes(numEarthquakes, location, "http://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_week.geojson");
     }
 
-    private List<String> getNews(int numNews)
+    public List<String> getNews(int numNews)
     {
         System.out.println("getting last " + numNews + " news");
         List<String> news = new ArrayList<String>();
         String url = "http://ajax.googleapis.com/ajax/services/feed/load?v=1.0&num=8&q=http%3A%2F%2Fnews.google.com%2Fnews%3Foutput%3Drss";
+        //String url = "http://ajax.googleapis.com/ajax/services/feed/load?v=1.0&num=8&q=http%3A%2F%2Fnews.google.com%2Fnews%2Ffeeds%3Foutput%3Drss";
+        try
+        {
+            String jsonString = httpGet(url);
+            System.out.println(url);
+            JSONArray json = ((JSONObject)((JSONObject)((JSONObject)JSONSerializer.toJSON(jsonString)).getJSONObject("responseData")).getJSONObject("feed")).getJSONArray("entries");
+            int newsCount = 0;
+            if (json != null)
+            {
+            	for (int i = 0; (i < json.size()) && (newsCount < numNews); i++)
+            	{
+            		String title = ((JSONObject)json.get(i)).getString("title");
+            		String publishedDate = ((JSONObject)json.get(i)).getString("publishedDate");
+            		news.add(publishedDate + " : "+title);
+            		newsCount++;
+            	}
+            }
+        }
+        catch (Exception e)
+        {
+        	System.out.println("Error: "+e.getMessage());
+            e.printStackTrace();
+        }
+        return news;
+    }
+    
+    public List<String> getSPNews(int numNews)
+    {
+        System.out.println("getting last " + numNews + " spnews");
+        List<String> news = new ArrayList<String>();
+        String url = "http://ajax.googleapis.com/ajax/services/feed/load?v=1.0&num=8&q=https%3A%2F%2Fnews.google.com%2Fnews%3Fq%3D%2522smashing%2520pumpkins%2522%2520or%2520%2522billy%2520corgan%2522%26output%3Drss";
         //String url = "http://ajax.googleapis.com/ajax/services/feed/load?v=1.0&num=8&q=http%3A%2F%2Fnews.google.com%2Fnews%2Ffeeds%3Foutput%3Drss";
         try
         {
@@ -881,6 +1251,20 @@ public class IrcBot
         }
         
         this.onServerResponse(code, response);
+    }
+    
+    public static void main(String[] args) throws FileNotFoundException, IOException
+    {
+        Properties props = new Properties();
+        props.load(new FileInputStream("b0llybot.properties"));
+        IrcBot bot = new IrcBot(props);
+        System.out.println(bot.getCurrentWeather_wunderground("92618"));
+        System.out.println(bot.getWeatherForecast_wunderground("92618"));
+        List<String> weather = bot.getWeatherForecastDetail_wunderground("92618");
+        for (String s : weather)
+        {
+        	System.out.println(s);
+        }
     }
 }
 
