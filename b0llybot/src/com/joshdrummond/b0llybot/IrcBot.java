@@ -12,6 +12,7 @@ import java.net.InetAddress;
 import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -19,9 +20,12 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Random;
 import java.util.StringTokenizer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import net.sf.json.JSONArray;
 import net.sf.json.JSONObject;
 import net.sf.json.JSONSerializer;
+import org.apache.commons.lang.StringEscapeUtils;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
@@ -40,6 +44,7 @@ public class IrcBot
     private static final String FILE_REPLIES = "replies.dat";
     private static final String FILE_OPIPS = "opips.dat";
     private Map<String, String> hostnames = null;
+    private Map<String, List<String>> tells = null;
     private static final String[] MAGIC_8BALL_ANSWERS = {
     		"It is certain",
     		"It is decidedly so",
@@ -66,6 +71,7 @@ public class IrcBot
     public IrcBot(Properties props)
     {
     	this.hostnames = new HashMap<String,String>();
+    	this.tells = new HashMap<String,List<String>>();
         this.props = props;
         this.setName(props.getProperty("nick"));
         this.setAutoNickChange(true);
@@ -73,11 +79,17 @@ public class IrcBot
         reload();
     }
 
+    public void doTest(String message)
+    {
+    	onMessage("test", "test", "test", "test", message);
+    }
+    
     @Override
     protected void onMessage(String channel, String sender, String login, String hostname, String message)
     {
     	String originalMessage = message;
         message = message.toLowerCase();
+        checkTells(channel, sender);
         if (message.contains(".finger"))
         {
         	String[] s = message.split("finger");
@@ -98,6 +110,18 @@ public class IrcBot
         {
         	doBigEarthquake(channel, message);
         }
+        else if (originalMessage.contains(".define"))
+        {
+        	doDefine(channel, originalMessage);
+        }
+        else if (originalMessage.contains(".tell"))
+        {
+        	doTell(channel, sender, originalMessage);
+        }
+        else if (originalMessage.contains(".wiki"))
+        {
+        	doWiki(channel, originalMessage);
+        }
         else if (message.contains(".news"))
         {
         	doNews(channel, message);
@@ -113,6 +137,10 @@ public class IrcBot
         else if (message.contains(".8"))
         {
         	do8ball(channel);
+        }
+        else if (message.contains(".rain "))
+        {
+        	doRain(channel, message);
         }
         else if (message.contains(".wzf "))
         {
@@ -142,12 +170,27 @@ public class IrcBot
         {
             doFindQuote(channel, message);
         }
+        else if (message.contains("http://") || message.contains("https://"))
+        {
+        	doLinkTitle(channel, originalMessage);
+        }
         else
         {
             doRandomReply(channel, message);
         }
     }
 
+	private void doLinkTitle(String channel, String message) {
+	    String[] s = message.trim().split(" ");
+	    for (int i = 0; i < s.length; i++)
+	    {
+	    	if (s[i].toLowerCase().startsWith("http://") || s[i].toLowerCase().startsWith("https://"))
+	    	{
+	    		sendMessage(channel, getLinkTitle(s[i]));
+	    	}
+	    }
+    }
+	
 	private void doRandomReply(String channel, String message) {
 	    for (String key : replies.keySet())
 	    {
@@ -296,7 +339,65 @@ public class IrcBot
 	    	sendMessage(channel, getWeatherForecast_wunderground(s[1].trim()));
 	    }
     }
+	
+	private void doRain(String channel, String message) {
+	    String[] s = message.split("rain");
+	    if (s.length > 1)
+	    {
+	    	sendMessage(channel, getRainForecast_wunderground(s[1].trim()));
+	    }
+    }
 
+	private void doWiki(String channel, String message) {
+	    String[] s = message.trim().split("wiki");
+	    if (s.length > 1)
+	    {
+	    	sendMessage(channel, getWiki(s[1].trim()));
+	    }
+    }
+	
+	private void doTell(String channel, String sender, String message) {
+	    String[] s = message.trim().split("tell");
+	    if (s.length > 1)
+	    {
+	    	String content = s[1].trim();
+	    	int i = content.indexOf(" ");
+	    	if (i > 0)
+	    	{
+	    		String receiver = content.substring(0, i);
+	    		message = content.substring(i+1);
+	    		List<String> list = null;
+	    		if (tells.containsKey(receiver.toLowerCase()))
+	    		{
+	    			list = (List<String>)tells.get(receiver.toLowerCase());
+	    		}
+	    		else
+	    		{
+	    			list = new ArrayList<String>();
+	    		}
+    			list.add((new SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(Calendar.getInstance().getTime()))+" <"+sender+"> tell "+receiver+" "+message);
+    			tells.put(receiver.toLowerCase(), list);
+    			sendMessage(channel, sender+": I'll pass that on when "+receiver+" is around.");
+	    	}
+	    	else
+	    	{
+	    		sendMessage(channel, "tell "+content+" what?");
+	    	}
+	    }
+	    else
+	    {
+	    	sendMessage(channel, "tell who?");
+	    }
+    }
+	
+	private void doDefine(String channel, String message) {
+	    String[] s = message.trim().split("define");
+	    if (s.length > 1)
+	    {
+	    	sendMessage(channel, getDefine(s[1].trim()));
+	    }
+    }
+	
 	private void doNews(String channel, String message) {
 	    String[] s = message.trim().split(" ");
 	    int numNews = 1;
@@ -375,7 +476,9 @@ public class IrcBot
 	
 	private void doRoulette(String channel, String nick)
 	{
-		boolean isKick = (new Random()).nextInt(6) == 0;
+		int roll = (new Random()).nextInt(6);
+		System.out.println("you rolled a "+roll);
+		boolean isKick = (roll == 0);
 		if (isKick)
 		{
 			kick(channel, nick, "BANG!");
@@ -390,7 +493,20 @@ public class IrcBot
 	{
 		sendMessage(channel, MAGIC_8BALL_ANSWERS[(new Random()).nextInt(MAGIC_8BALL_ANSWERS.length)]);
 	}
-    
+
+	private void checkTells(String channel, String sender)
+	{
+        if (tells.containsKey(sender.toLowerCase()))
+        {
+        	List<String> list = tells.get(sender.toLowerCase());
+        	for (String s : list)
+        	{
+        		sendMessage(channel, s);
+        	}
+        	tells.remove(sender.toLowerCase());
+        }
+	}
+	
     @Override
     protected void onJoin(String channel, String sender, String login, String hostname)
     {
@@ -403,6 +519,8 @@ public class IrcBot
         {
         	op(channel, sender);
         }
+        
+        checkTells(channel, sender);
         
 //        else
 //        {
@@ -564,7 +682,7 @@ public class IrcBot
     }
     
     @Deprecated
-    public String getWeatherForecast_weatherbug(String location)
+    private String getWeatherForecast_weatherbug(String location)
     {
     	//API- http://developer.weatherbug.com/docs/read/WeatherBug_API_JSON
     	int numDays = 5;
@@ -620,7 +738,7 @@ public class IrcBot
         return weather;
     }
 
-    public String getWeatherForecast_wunderground(String location)
+    private String getWeatherForecast_wunderground(String location)
     {
     	//API- http://www.wunderground.com/weather/api/d/docs?d=data/forecast
     	int numDays = 4;
@@ -658,9 +776,44 @@ public class IrcBot
         }
         return weather;
     }
+    
+    private String getRainForecast_wunderground(String location)
+    {
+    	//API- http://www.wunderground.com/weather/api/d/docs?d=data/forecast
+    	int numDays = 4;
+        String weather = "";
+        location = location.replaceAll(" ", "%20");
+        System.out.println("getting rain forecast for "+location);
+        try
+        {
+            String weatherApiKey = props.getProperty("weather_api_key");
+            String url = "http://api.wunderground.com/api/"+weatherApiKey+"/forecast/q/"+location+".json";
+            System.out.println(url);
+            String jsonString = httpGet(url).trim();
+            JSONObject json = (JSONObject)JSONSerializer.toJSON(jsonString);
+            
+            weather = "Rain Forecast for "+getLocation_wunderground(location)+" --- ";
+            for (int i = 0; i < numDays; i++)
+            {
+            	if (i > 0) weather += "; ";
+                String day = ((JSONObject)((JSONObject)(((JSONObject)((JSONObject)json.getJSONObject("forecast")).getJSONObject("simpleforecast")).getJSONArray("forecastday")).get(i)).getJSONObject("date")).getString("weekday_short");
+            	weather += day + " - ";
+            	
+                String rain = ((JSONObject)(((JSONObject)((JSONObject)json.getJSONObject("forecast")).getJSONObject("simpleforecast")).getJSONArray("forecastday")).get(i)).getString("pop");
+                weather += rain+"%";
+            }
+        }
+        catch (Exception e)
+        {
+        	System.out.println("Error: "+e.getMessage());
+            e.printStackTrace(System.out);
+            weather = "error";
+        }
+        return weather;
+    }
 
     @Deprecated
-    public List<String> getWeatherForecastDetail_weatherbug(String location)
+    private List<String> getWeatherForecastDetail_weatherbug(String location)
     {
     	//API- http://developer.weatherbug.com/docs/read/WeatherBug_API_JSON
     	int numDays = 3;
@@ -721,7 +874,7 @@ public class IrcBot
         return weather;
     }
 
-    public List<String> getWeatherForecastDetail_openweathermap(String location)
+    private List<String> getWeatherForecastDetail_openweathermap(String location)
     {
     	//API- http://developer.weatherbug.com/docs/read/WeatherBug_API_JSON
     	int numDays = 3;
@@ -764,7 +917,7 @@ public class IrcBot
         return weather;
     }
     
-    public List<String> getWeatherForecastDetail_wunderground(String location)
+    private List<String> getWeatherForecastDetail_wunderground(String location)
     {
     	//API- http://www.wunderground.com/weather/api/d/docs?d=data/forecast
     	int numDays = 8;
@@ -797,7 +950,7 @@ public class IrcBot
     }
 
     @Deprecated
-    public String getCurrentWeather_weatherbug(String location)
+    private String getCurrentWeather_weatherbug(String location)
     {
     	//API- http://developer.weatherbug.com/docs/read/WeatherBug_API_JSON
         String weather = "";
@@ -849,7 +1002,7 @@ public class IrcBot
     }
     
     
-    public String getCurrentWeather_openweathermap(String location)
+    private String getCurrentWeather_openweathermap(String location)
     {
     	//API- http://openweathermap.org/current
         String weather = "";
@@ -880,7 +1033,7 @@ public class IrcBot
         return weather;
     }
     
-    public String getCurrentWeather_wunderground(String location)
+    private String getCurrentWeather_wunderground(String location)
     {
     	//API- http://www.wunderground.com/weather/api/d/docs
         String weather = "";
@@ -912,7 +1065,7 @@ public class IrcBot
         return weather;
     }
     
-    public String getLocation_wunderground(String location)
+    private String getLocation_wunderground(String location)
     {
     	//API- http://www.wunderground.com/weather/api/d/docs?d=data/geolookup
         String weather = "";
@@ -1008,17 +1161,89 @@ public class IrcBot
         return earthquakes;
     }
     
-    public List<String> getBigEarthquakes(int numEarthquakes, String location)
+    private List<String> getBigEarthquakes(int numEarthquakes, String location)
     {
     	return getEarthquakes(numEarthquakes, location, "http://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_month.geojson");
     }
 
-    public List<String> getAllEarthquakes(int numEarthquakes, String location)
+    private List<String> getAllEarthquakes(int numEarthquakes, String location)
     {
     	return getEarthquakes(numEarthquakes, location, "http://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_week.geojson");
     }
 
-    public List<String> getNews(int numNews)
+    private String getWiki(String search)
+    {
+        System.out.println("getting wiki for "+search);
+        String result = "";
+        search = search.replaceAll(" ", "%20");
+        String url = "http://en.wikipedia.org/w/api.php?format=json&action=query&prop=extracts&titles="+search+"&exintro=&redirects=true";
+        try
+        {
+            String jsonString = httpGet(url);
+            System.out.println(url);
+            String key = ((JSONArray)((JSONObject)((JSONObject)((JSONObject)JSONSerializer.toJSON(jsonString)).getJSONObject("query")).getJSONObject("pages")).names()).getString(0);
+            result = ((JSONObject)((JSONObject)((JSONObject)((JSONObject)JSONSerializer.toJSON(jsonString)).getJSONObject("query")).getJSONObject("pages")).getJSONObject(key)).getString("extract");
+            result = result.replaceAll("<b>", "");
+            result = result.replaceAll("</b>", "");
+            result = result.replaceAll("<i>", "");
+            result = result.replaceAll("</i>", "");
+            result = result.replaceAll("<p>", "");
+            result = result.replaceAll("</p>", "");
+            result = result.replaceAll("<small>", "");
+            result = result.replaceAll("</small>", "");
+        }
+        catch (Exception e)
+        {
+        	System.out.println("Error: "+e.getMessage());
+            e.printStackTrace();
+        }
+        return result;
+    }
+    
+    private String getLinkTitle(String url)
+    {
+        System.out.println("getting link title for "+url);
+        String title = "";
+        try
+        {
+            String content = httpGet(url);
+            Pattern p = Pattern.compile("<head>.*?<title>(.*?)</title>.*?</head>", Pattern.DOTALL); 
+            Matcher m = p.matcher(content);
+            while (m.find()) {
+                title = m.group(1);
+            }
+        }
+        catch (Exception e)
+        {
+        	System.out.println("Error: "+e.getMessage());
+            e.printStackTrace();
+        }
+        return StringEscapeUtils.unescapeHtml(title.trim());
+    }
+    
+    private String getDefine(String search)
+    {
+        System.out.println("getting define for "+search);
+        String result = "";
+        search = search.replaceAll(" ", "%20");
+        String url = "http://api.urbandictionary.com/v0/define?term="+search;
+        try
+        {
+            String jsonString = httpGet(url);
+            System.out.println(url);
+            int size = ((JSONArray)((JSONObject)JSONSerializer.toJSON(jsonString)).getJSONArray("list")).size();
+            int index = (new Random()).nextInt(size);
+            result = ((JSONObject)((JSONArray)((JSONObject)JSONSerializer.toJSON(jsonString)).getJSONArray("list")).getJSONObject(index)).getString("definition");
+        }
+        catch (Exception e)
+        {
+        	System.out.println("Error: "+e.getMessage());
+            e.printStackTrace();
+        }
+        return result;
+    }
+    
+    private List<String> getNews(int numNews)
     {
         System.out.println("getting last " + numNews + " news");
         List<String> news = new ArrayList<String>();
@@ -1048,13 +1273,13 @@ public class IrcBot
         }
         return news;
     }
-    
-    public List<String> getSPNews(int numNews)
+
+    private List<String> getSPNews(int numNews)
     {
         System.out.println("getting last " + numNews + " spnews");
         List<String> news = new ArrayList<String>();
-        String url = "http://ajax.googleapis.com/ajax/services/feed/load?v=1.0&num=8&q=https%3A%2F%2Fnews.google.com%2Fnews%3Fq%3D%2522smashing%2520pumpkins%2522%2520or%2520%2522billy%2520corgan%2522%26output%3Drss";
-        //String url = "http://ajax.googleapis.com/ajax/services/feed/load?v=1.0&num=8&q=http%3A%2F%2Fnews.google.com%2Fnews%2Ffeeds%3Foutput%3Drss";
+        //String url = "http://ajax.googleapis.com/ajax/services/feed/load?v=1.0&num=8&q=https%3A%2F%2Fnews.google.com%2Fnews%3Fq%3D%2522smashing%2520pumpkins%2522%2520or%2520%2522billy%2520corgan%2522%26output%3Drss";
+        String url = "http://ajax.googleapis.com/ajax/services/feed/load?v=1.0&num=8&q=https%3A%2F%2Fnews.google.com%2Fnews%3Fq%3D%2522smashing%2520pumpkins%2522%26output%3Drss";
         try
         {
             String jsonString = httpGet(url);
@@ -1258,13 +1483,7 @@ public class IrcBot
         Properties props = new Properties();
         props.load(new FileInputStream("b0llybot.properties"));
         IrcBot bot = new IrcBot(props);
-        System.out.println(bot.getCurrentWeather_wunderground("92618"));
-        System.out.println(bot.getWeatherForecast_wunderground("92618"));
-        List<String> weather = bot.getWeatherForecastDetail_wunderground("92618");
-        for (String s : weather)
-        {
-        	System.out.println(s);
-        }
+        bot.doTest(".define billy corgan");
     }
 }
 
