@@ -30,6 +30,7 @@ import org.apache.http.HttpResponse;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.DefaultHttpClient;
+import org.apache.http.util.EntityUtils;
 import org.jibble.pircbot.PircBot;
 
 
@@ -1206,7 +1207,7 @@ public class IrcBot
         String title = "";
         try
         {
-            String content = httpGet(url);
+            String content = httpGet(url, true);
             Pattern p = Pattern.compile("<head>.*?<title>(.*?)</title>.*?</head>", Pattern.DOTALL); 
             Matcher m = p.matcher(content);
             while (m.find()) {
@@ -1308,19 +1309,31 @@ public class IrcBot
     private String httpGet(String URL)
     	throws Exception
     {
+    	return httpGet(URL, false);
+    }
+    
+    private String httpGet(String URL, boolean htmlContentOnly)
+    	throws Exception
+    {
         HttpClient hc = new DefaultHttpClient();
         HttpGet httpget = new HttpGet(URL);
-//        System.out.println("httpGet: "+httpget.getURI());
+        //System.out.println("httpGet: "+httpget.getURI());
         HttpResponse response = hc.execute(httpget);
-        BufferedReader reader = new BufferedReader(new InputStreamReader(response.getEntity().getContent()));
+        String contentType = response.getEntity().getContentType().getValue();
+        //System.out.println("contentType: "+contentType);
         StringBuilder builder = new StringBuilder();
-        String line = reader.readLine();
-        while (line != null)
+        if (contentType.contains("html") || !htmlContentOnly)
         {
-        	builder.append(line).append("\n");
-        	line = reader.readLine();
+	        BufferedReader reader = new BufferedReader(new InputStreamReader(response.getEntity().getContent()));
+	        String line = reader.readLine();
+	        while (line != null)
+	        {
+	        	builder.append(line).append("\n");
+	        	line = reader.readLine();
+	        }
+	//        System.out.println("httpResponse: "+builder.toString());
         }
-//        System.out.println("httpResponse: "+builder.toString());
+        EntityUtils.consume(response.getEntity());
         return builder.toString();
     }
     
